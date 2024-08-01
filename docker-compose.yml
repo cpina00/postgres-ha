@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  pg-master:
+    image: postgres:16.3-alpine3.19
+    container_name: pg-master
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg-master-data:/var/lib/postgresql/data
+      - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh
+    networks:
+      - pg-networks
+    entrypoint: ["/docker-entrypoint-initdb.d/init-master.sh"]
+  
+  pg-slave:
+    image: postgres:16.3-alpine3.19
+    container_name: pg-slave
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      - pg-master
+    volumes:
+      - pg-slave-data:/var/lib/postgresql/data
+      - ./init-slave.sh:/docker-entrypoint-initdb.d/init-slave.sh
+    networks:
+      - pg-networks
+    entrypoint: ["/docker-entrypoint-initdb.d/init-slave.sh"]
+
+  pgpool:
+    image: bitnami/pgpool:4.5.2-debian-12-r5
+    container_name: pgpool
+    env_file:
+      - .env
+    environment:
+      PGPOOL_BACKEND_NODES: '0:pg-master:5432,1:pg-slave:5432'
+      PGPOOL_SR_CHECK_USER: ${POSTGRES_USER}
+      PGPOOL_SR_CHECK_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRESQL_USERNAME: ${POSTGRES_USER}
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRESQL_DATABASE: ${POSTGRES_DB}
+      PGPOOL_ADMIN_USERNAME: admin
+      PGPOOL_ADMIN_PASSWORD: ${PGPOOL_ADMIN_PASSWORD}
+      PGPOOL_POSTGRES_USERNAME: ${POSTGRES_USER}
+      PGPOOL_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGPOOL_FAILOVER_ON_BACKEND_ERROR: "true"
+    volumes:
+      - ./pgpool.conf:/opt/bitnami/pgpool/conf/pgpool.conf
+
+
+    depends_on:
+      - pg-master
+      - pg-slave
+    ports:
+      - "5433:5432"
+    networks:
+      - pg-networks
+
+volumes:
+  pg-master-data:
+  pg-slave-data:
+
+networks:
+  pg-networks:
+    driver: bridge
